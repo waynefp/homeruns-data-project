@@ -9,11 +9,18 @@ import plotly.graph_objects as go
 import requests
 import csv
 import json
+import os
 from datetime import datetime, date, timedelta
 from pathlib import Path
+from collections import defaultdict
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent / ".env")
 
 DATA_DIR = Path(__file__).parent / "data"
 MLB_API = "https://statsapi.mlb.com/api/v1"
+ODDS_API_KEY = os.getenv("ODDS_API_KEY", "")
+ODDS_API_BASE = "https://api.the-odds-api.com/v4"
 
 # Player roster with IDs
 TRACKED_PLAYERS = {
@@ -282,6 +289,91 @@ def get_watchlist_games(schedule_data):
 
 # --- Dashboard ---
 
+@st.cache_data(ttl=600)
+def fetch_hr_odds():
+    """Fetch HR prop odds for tracked players from The Odds API."""
+    if not ODDS_API_KEY:
+        return [], "No API key configured"
+
+    tracked_names = {info["name"] for info in TRACKED_PLAYERS.values()}
+    tracked_teams = {info["team"] for info in TRACKED_PLAYERS.values()}
+
+    # Full team name to abbreviation mapping
+    TEAM_NAME_MAP = {
+        "Seattle Mariners": "SEA", "New York Yankees": "NYY", "Tampa Bay Rays": "TB",
+        "Los Angeles Angels": "LAA", "Detroit Tigers": "DET", "Oakland Athletics": "OAK",
+        "Minnesota Twins": "MIN", "Kansas City Royals": "KC", "Philadelphia Phillies": "PHI",
+        "Los Angeles Dodgers": "LAD", "New York Mets": "NYM", "Arizona Diamondbacks": "ARI",
+        "Chicago Cubs": "CHC", "Colorado Rockies": "COL", "Baltimore Orioles": "BAL",
+        "Boston Red Sox": "BOS", "Chicago White Sox": "CWS", "Cleveland Guardians": "CLE",
+        "Houston Astros": "HOU", "Texas Rangers": "TEX", "Toronto Blue Jays": "TOR",
+        "Atlanta Braves": "ATL", "Cincinnati Reds": "CIN", "Miami Marlins": "MIA",
+        "Milwaukee Brewers": "MIL", "Pittsburgh Pirates": "PIT", "San Diego Padres": "SD",
+        "San Francisco Giants": "SF", "St. Louis Cardinals": "STL", "Washington Nationals": "WSH",
+    }
+
+    try:
+        # Get events (free, no credits)
+        events_resp = requests.get(
+            f"{ODDS_API_BASE}/sports/baseball_mlb/events",
+            params={"apiKey": ODDS_API_KEY}, timeout=15
+        )
+        events_resp.raise_for_status()
+        events = events_resp.json()
+
+        # Filter to games with tracked teams
+        priority_events = []
+        for e in events:
+            home_abbr = TEAM_NAME_MAP.get(e.get("home_team", ""), "")
+            away_abbr = TEAM_NAME_MAP.get(e.get("away_team", ""), "")
+            if home_abbr in tracked_teams or away_abbr in tracked_teams:
+                priority_events.append(e)
+
+        all_odds = []
+        credits_remaining = "?"
+
+        for e in priority_events:
+            try:
+                odds_resp = requests.get(
+                    f"{ODDS_API_BASE}/sports/baseball_mlb/events/{e['id']}/odds",
+                    params={
+                        "apiKey": ODDS_API_KEY,
+                        "regions": "us",
+                        "markets": "batter_home_runs",
+                        "oddsFormat": "american",
+                    },
+                    timeout=15,
+                )
+                odds_resp.raise_for_status()
+                credits_remaining = odds_resp.headers.get("x-requests-remaining", "?")
+                odds_data = odds_resp.json()
+
+                game_label = f"{TEAM_NAME_MAP.get(e['away_team'], e['away_team'])} @ {TEAM_NAME_MAP.get(e['home_team'], e['home_team'])}"
+
+                for bk in odds_data.get("bookmakers", []):
+                    for mkt in bk.get("markets", []):
+                        for o in mkt.get("outcomes", []):
+                            if o["description"] in tracked_names and o["point"] == 0.5:
+                                price = o["price"]
+                                implied = (
+                                    100 / (price + 100) if price > 0
+                                    else abs(price) / (abs(price) + 100)
+                                )
+                                all_odds.append({
+                                    "player": o["description"],
+                                    "game": game_label,
+                                    "book": bk["title"],
+                                    "odds": price,
+                                    "implied_prob": round(implied * 100, 1),
+                                })
+            except Exception:
+                continue
+
+        return all_odds, f"Credits remaining: {credits_remaining}"
+    except Exception as ex:
+        return [], f"Error: {ex}"
+
+
 st.set_page_config(page_title="MLB HR Tracker", layout="wide", page_icon="\u26be")
 
 st.title("\u26be MLB Home Run Tracker")
@@ -293,6 +385,7 @@ page = st.sidebar.radio("View", [
     "Today's Games",
     "Yesterday's Results",
     "Matchup Drill-Down",
+    "Odds & Edge",
     "Player Profiles",
     "HR Detail Log",
     "Situational Analysis",
@@ -563,6 +656,260 @@ elif page == "Matchup Drill-Down":
                         "Distance": h.get("total_distance", ""),
                     })
                 st.dataframe(detail_rows, use_container_width=True, hide_index=True)
+
+# --- Page: Odds & Edge ---
+elif page == "Odds & Edge":
+    st.header("HR Prop Odds & Edge Finder")
+    st.caption("Live odds vs situational HR rates — the edge is in the specific matchup, not the averages")
+
+    if not ODDS_API_KEY:
+        st.error("No Odds API key found. Add ODDS_API_KEY to your .env file.")
+    else:
+        with st.spinner("Fetching live HR prop odds and today's matchups..."):
+            odds_data, status_msg = fetch_hr_odds()
+            schedule_data = fetch_todays_schedule()
+
+        st.caption(status_msg)
+
+        if not odds_data:
+            st.info("No HR prop odds available for tracked players right now. Odds typically appear a few hours before game time.")
+        else:
+            # Load all data sources for edge calculation
+            splits_data = load_splits()
+            splits_by_name = {s.get("player_name", ""): s for s in splits_data}
+            hr_details = load_hr_details()
+
+            # Build cross-factor HR counts from hr_details (actual HR events)
+            # Key: (player_name, home_away, pitcher_hand) -> HR count
+            cross_hr_counts = defaultdict(int)
+            for h in hr_details:
+                name = h.get("player_name", "")
+                ha = h.get("home_away", "")
+                ph = h.get("pitcher_hand", "")
+                if name and ha and ph:
+                    cross_hr_counts[(name, ha, ph)] += 1
+
+            # Get today's pitcher matchups from schedule
+            # Build pitcher hand lookup for today's games
+            today_pitcher_info = {}  # team_abbr -> {"pitcher_name": ..., "pitcher_hand": ...}
+            watchlist_games = get_watchlist_games(schedule_data) if schedule_data else []
+            # Collect unique facing pitcher info per player
+            player_today_matchup = {}  # player_name -> {"facing_pitcher", "facing_hand", "home_away"}
+            for g in watchlist_games:
+                player_today_matchup[g["player_name"]] = {
+                    "facing_pitcher": g.get("facing_pitcher", "TBD"),
+                    "facing_hand": g.get("facing_hand", ""),
+                    "home_away": g.get("home_away", ""),
+                }
+
+            def safe_int_odds(val, default=0):
+                try:
+                    return int(val)
+                except (ValueError, TypeError):
+                    return default
+
+            # Group odds by player, find best odds per player
+            by_player = defaultdict(list)
+            for o in odds_data:
+                by_player[o["player"]].append(o)
+
+            edge_rows = []
+            for player_name in sorted(by_player.keys()):
+                player_odds = by_player[player_name]
+                best = max(player_odds, key=lambda x: x["odds"])
+                game = best["game"]
+
+                # Get player info
+                player_info = None
+                for pid, info in TRACKED_PLAYERS.items():
+                    if info["name"] == player_name:
+                        player_info = info
+                        break
+
+                bats_code = player_info["bats"] if player_info else "?"
+                bats = BATS_LABEL.get(bats_code, "?")
+
+                split = splits_by_name.get(player_name, {})
+
+                # Determine Home/Away and pitcher hand from today's schedule
+                today = player_today_matchup.get(player_name, {})
+                ha_label = today.get("home_away", "")
+                facing_pitcher = today.get("facing_pitcher", "TBD")
+                facing_hand_code = today.get("facing_hand", "")
+                facing_hand = THROWS_LABEL.get(facing_hand_code, "TBD")
+
+                # If we didn't get it from schedule, infer H/A from odds game label
+                if not ha_label and player_info:
+                    parts = game.split(" @ ")
+                    if len(parts) == 2:
+                        ha_label = "Home" if parts[1].strip() == player_info["team"] else "Away"
+
+                # === EDGE CALCULATION: Three layers ===
+
+                # Layer 1: Overall HR rate (baseline)
+                total_games = safe_int_odds(split.get("home_games")) + safe_int_odds(split.get("away_games"))
+                total_hr = safe_int_odds(split.get("home_hr")) + safe_int_odds(split.get("away_hr"))
+                overall_rate = (total_hr / total_games * 100) if total_games > 0 else 0
+
+                # Layer 2: Home/Away HR rate
+                if ha_label == "Home":
+                    ha_games = safe_int_odds(split.get("home_games"))
+                    ha_hr = safe_int_odds(split.get("home_hr"))
+                else:
+                    ha_games = safe_int_odds(split.get("away_games"))
+                    ha_hr = safe_int_odds(split.get("away_hr"))
+                ha_rate = (ha_hr / ha_games * 100) if ha_games > 0 else 0
+
+                # Layer 3: vs Pitcher Hand HR rate (from splits)
+                if facing_hand_code == "L":
+                    ph_ab = safe_int_odds(split.get("vs_lhp_ab"))
+                    ph_hr = safe_int_odds(split.get("vs_lhp_hr"))
+                elif facing_hand_code == "R":
+                    ph_ab = safe_int_odds(split.get("vs_rhp_ab"))
+                    ph_hr = safe_int_odds(split.get("vs_rhp_hr"))
+                else:
+                    ph_ab, ph_hr = 0, 0
+                platoon_rate = (ph_hr / ph_ab * 100) if ph_ab > 0 else 0
+
+                # Layer 4: Cross-factor (H/A + pitcher hand) from actual HR events
+                cross_hr = cross_hr_counts.get((player_name, ha_label, facing_hand_code), 0)
+                # Denominator: use H/A games as best available proxy
+                cross_rate = (cross_hr / ha_games * 100) if ha_games > 0 else 0
+
+                # Determine best situational rate to use for edge
+                # Priority: cross-factor > platoon > H/A > overall
+                if cross_hr > 0 and ha_games > 0:
+                    sit_rate = cross_rate
+                    sit_label = f"{ha_label} vs {facing_hand}"
+                elif facing_hand_code and ph_ab > 0:
+                    sit_rate = platoon_rate
+                    sit_label = f"vs {facing_hand}"
+                elif ha_games > 0:
+                    sit_rate = ha_rate
+                    sit_label = ha_label
+                else:
+                    sit_rate = overall_rate
+                    sit_label = "Overall"
+
+                implied = best["implied_prob"]
+                edge = round(sit_rate - implied, 1) if sit_rate > 0 else None
+
+                # Matchup description for today
+                if facing_hand_code:
+                    matchup_desc = f"{bats} vs {facing_hand}"
+                else:
+                    matchup_desc = bats
+
+                # Determine batter side for switch hitters
+                if bats_code == "S" and facing_hand_code:
+                    actual_side = "RHB" if facing_hand_code == "L" else "LHB"
+                    matchup_desc = f"{actual_side} (S) vs {facing_hand}"
+
+                all_books = ", ".join(
+                    f"{o['book']}: {o['odds']:+d}" for o in sorted(player_odds, key=lambda x: -x["odds"])
+                )
+
+                edge_rows.append({
+                    "Player": player_name,
+                    "Matchup": matchup_desc,
+                    "Game": game,
+                    "H/A": ha_label,
+                    "Pitcher": f"{facing_pitcher} ({facing_hand})" if facing_hand != "TBD" else facing_pitcher,
+                    "Best Odds": f"{best['odds']:+d}",
+                    "Implied %": f"{implied}%",
+                    "Situation": sit_label,
+                    "Sit. HR%": f"{sit_rate:.1f}%" if sit_rate > 0 else "N/A",
+                    "Edge": f"{edge:+.1f}%" if edge is not None else "N/A",
+                    "All Books": all_books,
+                    "_edge_val": edge if edge is not None else -999,
+                    "_implied": implied,
+                    "_sit_rate": sit_rate,
+                    "_overall": overall_rate,
+                    "_ha_rate": ha_rate,
+                    "_platoon_rate": platoon_rate,
+                    "_cross_rate": cross_rate,
+                    "_cross_hr": cross_hr,
+                    "_ha_games": ha_games,
+                })
+
+            # Summary metrics
+            has_edge = [r for r in edge_rows if r["_edge_val"] > 0]
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Players with Odds", len(edge_rows))
+            col2.metric("Potential Edges", len(has_edge))
+            col3.metric("Best Edge", f"{max(r['_edge_val'] for r in edge_rows):+.1f}%" if edge_rows else "N/A")
+            col4.metric("Avg Edge (positive)", f"{sum(r['_edge_val'] for r in has_edge) / len(has_edge):+.1f}%" if has_edge else "N/A")
+
+            # Sort by edge descending
+            edge_rows_sorted = sorted(edge_rows, key=lambda x: x["_edge_val"], reverse=True)
+
+            # Highlight edge opportunities
+            if has_edge:
+                st.subheader("Edge Opportunities")
+                st.caption("Players where situational HR rate exceeds sportsbook implied probability")
+                for r in edge_rows_sorted:
+                    if r["_edge_val"] <= 0:
+                        break
+                    st.success(
+                        f"**{r['Player']}** | {r['Matchup']} | {r['H/A']} | "
+                        f"vs {r['Pitcher']} | "
+                        f"Odds: {r['Best Odds']} (Implied {r['Implied %']}) | "
+                        f"**{r['Situation']} HR rate: {r['Sit. HR%']}** | "
+                        f"**Edge: {r['Edge']}**"
+                    )
+                    # Show the rate breakdown
+                    with st.expander(f"{r['Player']} — Rate Breakdown", expanded=False):
+                        bcol1, bcol2, bcol3, bcol4 = st.columns(4)
+                        bcol1.metric("Overall HR/G", f"{r['_overall']:.1f}%")
+                        bcol2.metric(f"{r['H/A']} HR/G", f"{r['_ha_rate']:.1f}%")
+                        bcol3.metric(f"vs {r['Pitcher'].split('(')[-1].rstrip(')')}" if "(" in r["Pitcher"] else "Platoon", f"{r['_platoon_rate']:.1f}%")
+                        bcol4.metric(f"Cross-Factor", f"{r['_cross_rate']:.1f}% ({r['_cross_hr']} HR / {r['_ha_games']} G)")
+                        st.caption(f"Books: {r['All Books']}")
+
+            # Full table
+            st.subheader("All Players")
+            display_cols = ["Player", "Matchup", "Game", "H/A", "Pitcher", "Best Odds", "Implied %", "Situation", "Sit. HR%", "Edge"]
+            display_rows = [{k: r[k] for k in display_cols} for r in edge_rows_sorted]
+            st.dataframe(display_rows, use_container_width=True, hide_index=True)
+
+            # Edge visualization
+            st.subheader("Implied Probability vs Situational HR Rate")
+            chart_data = [r for r in edge_rows_sorted if r["_sit_rate"] > 0]
+
+            if chart_data:
+                fig_edge = go.Figure()
+                fig_edge.add_trace(go.Bar(
+                    name="Sportsbook Implied %",
+                    x=[r["Player"] for r in chart_data],
+                    y=[r["_implied"] for r in chart_data],
+                    marker_color="#BF8F00",
+                ))
+                fig_edge.add_trace(go.Bar(
+                    name="Situational HR %",
+                    x=[r["Player"] for r in chart_data],
+                    y=[r["_sit_rate"] for r in chart_data],
+                    marker_color="#375623",
+                    text=[r["Situation"] for r in chart_data],
+                    textposition="outside",
+                    textfont_size=9,
+                ))
+                fig_edge.update_layout(
+                    barmode="group", height=500,
+                    xaxis_tickangle=-45,
+                    yaxis_title="Probability %",
+                    title="Green bar > Gold bar = Edge (labels show which situation)",
+                )
+                st.plotly_chart(fig_edge, use_container_width=True)
+
+            st.markdown("---")
+            st.caption(
+                "**How the edge is calculated:** The sportsbook sets one HR price across all situations. "
+                "We look at today's specific matchup (Home/Away + pitcher hand) and compare the player's "
+                "actual HR rate in that situation against the book's implied probability. "
+                "Cross-factor rates (e.g., 'Home vs RHP') use HR events from hr_details.csv divided by "
+                "H/A games from splits. Sample sizes are small early in the season — look for 50+ games "
+                "before treating edges as reliable."
+            )
 
 # --- Page: Player Profiles ---
 elif page == "Player Profiles":
