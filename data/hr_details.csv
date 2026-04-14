@@ -1,0 +1,30 @@
+date,player_name,player_id,bats,team,opponent,home_away,pitcher_name,pitcher_id,pitcher_hand,batter_side,inning,rbi,launch_speed,launch_angle,total_distance,description
+2026-03-26,Kyle Schwarber,656941,L,PHI,,Home,Nathan Eovaldi,543135,R,L,bottom 1,2,99.6,33.0,383.0,Kyle Schwarber homers (1) on a fly ball to left center field. Trea Turner scores.
+2026-03-27,Aaron Judge,592450,R,NYY,,Away,Robbie Ray,592662,L,R,top 6,2,109.1,37.0,405.0,Aaron Judge homers (1) on a fly ball to left field. Paul Goldschmidt scores.
+2026-03-28,Aaron Judge,592450,R,NYY,,Away,Ryan Borucki,621366,L,R,top 5,1,102.1,33.0,383.0,Aaron Judge homers (2) on a fly ball to left field.
+2026-03-29,Eugenio Suarez,553993,R,ARI,,Home,Greg Weissert,669711,R,R,bottom 6,3,109.6,27.0,431.0,Eugenio Suárez homers (1) on a fly ball to left center field. Matt McLain scores. Sal Stewart scores.
+2026-03-30,Corbin Carroll,682998,L,ARI,,Home,Justin Verlander,434378,R,L,bottom 2,3,107.8,37.0,403.0,Corbin Carroll homers (1) on a fly ball to right center field. Ildemaro Vargas scores. Jordan Lawlar scores.
+2026-03-31,Hunter Goodman,696100,R,COL,,Away,Max Scherzer,453286,R,R,top 6,1,110.9,29.0,435.0,Hunter Goodman homers (1) on a fly ball to left center field.
+2026-03-31,Kyle Schwarber,656941,L,PHI,,Home,Zack Littell,641793,R,L,bottom 3,1,103.0,33.0,397.0,Kyle Schwarber homers (2) on a fly ball to right center field.
+2026-03-31,Pete Alonso,624413,R,NYM,,Home,Jacob deGrom,594798,R,R,bottom 4,1,99.1,27.0,400.0,Pete Alonso homers (1) on a fly ball to center field.
+2026-04-01,Corbin Carroll,682998,L,ARI,,Home,Tarik Skubal,669373,L,L,bottom 1,1,106.8,23.0,410.0,Corbin Carroll homers (2) on a fly ball to center field.
+2026-04-01,Eugenio Suarez,553993,R,ARI,,Home,Mason Montgomery,682254,L,R,bottom 6,2,107.3,37.0,410.0,Eugenio Suárez homers (2) on a fly ball to left field. Sal Stewart scores.
+2026-04-01,Juan Soto,665742,L,NYM,,Away,Matthew Liberatore,669461,L,L,top 6,1,107.6,42.0,344.0,Juan Soto homers (1) on a fly ball to right field.
+2026-04-03,Aaron Judge,592450,R,NYY,,Home,Eury Pérez,691587,R,R,bottom 1,2,101.2,31.0,387.0,Aaron Judge homers (3) on a fly ball to left field. Trent Grisham scores.
+2026-04-03,Kyle Schwarber,656941,L,PHI,,Away,Valente Bellozo,678368,R,L,top 5,1,110.7,29.0,460.0,Kyle Schwarber homers (3) on a fly ball to right field.
+2026-04-03,Shohei Ohtani,660271,L,LAD,,Away,Miles Mikolas,571945,R,L,top 3,3,109.5,27.0,401.0,Shohei Ohtani homers (1) on a fly ball to right center field. Teoscar Hernández scores. Andy Pages scores.
+2026-04-05,Junior Caminero,691406,R,TB,,Away,Simeon Woods Richardson,680573,R,R,top 4,1,103.2,28.0,397.0,Junior Caminero homers (1) on a fly ball to left field.
+2026-04-05,Shohei Ohtani,660271,L,LAD,,Away,Foster Griffin,656492,L,L,top 3,1,114.6,26.0,438.0,Shohei Ohtani homers (2) on a fly ball to center field.
+2026-04-06,Cal Raleigh,663728,S,SEA,,Away,Jacob deGrom,594798,R,L,top 1,1,107.8,29.0,418.0,Cal Raleigh homers (1) on a fly ball to right field.
+2026-04-06,Jo Adell,666176,R,LAA,,Home,Chris Sale,519242,L,R,bottom 5,2,113.2,24.0,411.0,Jo Adell homers (1) on a fly ball to left center field. Jorge Soler scores.
+2026-04-06,Junior Caminero,691406,R,TB,,Home,Jameson Taillon,592791,R,R,bottom 3,1,106.8,28.0,401.0,Junior Caminero homers (2) on a fly ball to left field.
+2026-04-06,Shohei Ohtani,660271,L,LAD,,Away,Joe Mantiply,573009,L,L,top 6,1,107.8,25.0,414.0,Shohei Ohtani homers (3) on a fly ball to center field.
+2026-04-07,Pete Crow-Armstrong,691718,L,CHC,,Away,Yoendrys Gómez,672782,R,L,top 7,1,108.3,27.0,389.0,Pete Crow-Armstrong homers (1) on a fly ball to right field.
+2026-04-08,Hunter Goodman,696100,R,COL,,Home,Enyel De Los Santos,660853,R,R,bottom 4,1,96.0,32.0,378.0,Hunter Goodman homers (2) on a fly ball to left field.
+2026-04-11,Cal Raleigh,663728,S,SEA,,Home,Lance McCullers Jr.,621121,R,L,bottom 1,2,106.0,29.0,364.0,Cal Raleigh homers (2) on a fly ball to right field. J.P. Crawford scores.
+2026-04-11,Kyle Schwarber,656941,L,PHI,,Home,Brandon Pfaadt,694297,R,L,bottom 3,3,110.7,23.0,381.0,Kyle Schwarber homers (4) on a fly ball to right field. Alec Bohm scores. Justin Crawford scores.
+2026-04-11,Riley Greene,682985,L,DET,,Home,Janson Junk,676083,R,L,bottom 3,3,106.9,32.0,408.0,Riley Greene homers (1) on a fly ball to right center field. Kevin McGonigle scores. Dillon Dingler scores.
+2026-04-11,Shohei Ohtani,660271,L,LAD,,Home,Jack Leiter,683004,R,L,bottom 1,1,104.5,36.0,390.0,Shohei Ohtani homers (4) on a fly ball to right field.
+2026-04-12,Aaron Judge,592450,R,NYY,,Away,Mason Englert,669438,R,R,top 9,2,108.9,31.0,415.0,Aaron Judge homers (4) on a fly ball to right center field. Ben Rice scores.
+2026-04-12,Nick Kurtz,701762,L,OAK,,Away,Freddy Peralta,642547,R,L,top 3,1,106.5,28.0,363.0,Nick Kurtz homers (1) on a fly ball to right field.
+2026-04-12,Shohei Ohtani,660271,L,LAD,,Home,Jacob deGrom,594798,R,L,bottom 1,1,108.3,39.0,374.0,Shohei Ohtani homers (5) on a fly ball to right center field.
