@@ -13,10 +13,11 @@ This project tracks the top 20 HR hitters from the 2025 MLB season (10 AL, 10 NL
 ### 1. Backfill Script (`backfill_2026.py`)
 - Pulls game logs and HR play-by-play from the MLB Stats API (free, no key needed)
 - Tracks 20 players defined in `TRACKED_PLAYERS` dict (player IDs, names, teams, leagues, bat side, 2025 HR totals)
+- Uses `/api/v1/teams` endpoint to build team ID → abbreviation lookup (fixes missing opponent data in game logs)
 - Outputs 4 CSV files to `data/`:
   - `roster.csv` — 20 tracked players with metadata
-  - `daily_game_log.csv` — every game played (date, AB, hits, HRs, etc.) — 284 rows backfilled
-  - `hr_details.csv` — every HR with pitcher name, pitcher hand, batter side, launch speed, distance, inning — 29 rows backfilled
+  - `daily_game_log.csv` — every game played (date, AB, hits, HRs, etc.) — 320 rows backfilled
+  - `hr_details.csv` — every HR with pitcher name, pitcher hand, batter side, launch speed, distance, inning — 42 rows backfilled
   - `splits.csv` — aggregate splits: home/away, vs LHP/RHP (games, AB, HR, AVG, OPS)
 - Run with: `python backfill_2026.py`
 
@@ -43,13 +44,14 @@ This project tracks the top 20 HR hitters from the 2025 MLB season (10 AL, 10 NL
 
 ### 4. Streamlit Dashboard (`dashboard.py`)
 - **Launch:** `python -m streamlit run dashboard.py` (use `python -m` to ensure correct Python version)
-- **6 pages** accessible via sidebar:
+- **7 pages** accessible via sidebar:
 
 | Page | Description |
 |------|-------------|
 | **Today's Games** | Live schedule from MLB API — shows which tracked players are playing, matchup details (H/A, pitcher hand, batter hand), game status |
 | **Yesterday's Results** | Game results for tracked players — HR hitters shown with pitcher name/hand, batter side, exit velo, distance for each HR |
 | **Matchup Drill-Down** | Cross-factor analysis — filter by player(s), Home/Away, LHP/RHP; grouped bar charts, heatmap of all 4 combinations, filterable detail log |
+| **Odds & Edge** | Live HR prop odds from The Odds API, implied probability calculations, edge analysis vs historical rates |
 | **Player Profiles** | Individual player view with season totals, situational splits (home/away, vs LHP/RHP), HR timeline chart |
 | **HR Detail Log** | Searchable/filterable table of all HR events from CSV data |
 | **Situational Analysis** | League-wide analysis — HR rates by situation, platoon advantage chart |
@@ -60,22 +62,24 @@ This project tracks the top 20 HR hitters from the 2025 MLB season (10 AL, 10 NL
 
 ---
 
+### 5. Telegram Notifications (n8n workflows)
+
+**Pre-Game Alert — HR Watchlist**
+- **Schedule:** Daily at 10 AM Eastern
+- **Flow:** Cron Trigger → Fetch MLB Schedule (HTTP) → Build Pre-Game Message (Code) → Fetch Pitcher Hands (HTTP) → Format Pre-Game Alert (Code) → Telegram
+- **What it does:** Lists all tracked players with games that day, including Home/Away, opponent, probable starting pitcher with throw hand (RHP/LHP), and batter handedness
+- **Message format:** HTML with bold player/opponent names, pitcher hand labels
+- **Key detail:** Pitcher IDs are collected in Build Pre-Game Message as a comma-separated string, then fetched in a single bulk API call to `/api/v1/people?personIds=...` (comma must be in URL, not Query Parameters — see Known Quirks)
+
+**Post-Game HR Update**
+- **Schedule:** Daily at midnight Eastern
+- **Flow:** Cron Trigger → Fetch Yesterday's Schedule (HTTP) → Extract Tracked Games (Code) → Fetch Game Feed (HTTP) → Format Post-Game Message (Code) → Telegram
+- **What it does:** Fetches full game feeds for all games involving tracked teams, extracts box score stats and HR play-by-play details for tracked players
+- **Message format:** HTML with HR details (pitcher name/hand, batter side, inning, exit velo, distance), no-HR list, DNP count, and summary line
+
+---
+
 ## What's NOT Built Yet
-
-### Telegram Notifications (n8n workflows)
-Two planned workflows to send Telegram messages:
-
-1. **Pre-Game Alert (~10 AM ET):**
-   - Which tracked players are playing today
-   - For each: Home/Away, probable pitcher name + hand, batter hand, matchup type (e.g., "LHB vs RHP")
-   - Basically the "Today's Games" dashboard page as a Telegram message
-
-2. **Post-Game HR Update (~midnight ET):**
-   - Which tracked players hit HRs
-   - For each HR: pitcher name + hand, batter side, Home/Away, exit velo, distance
-   - Summary of who played but didn't HR
-
-**User has:** ~10 Telegram bots already connected to n8n workflows. Needs bot token + chat ID for a new or existing bot.
 
 ### Dashboard Deployment
 Dashboard currently runs locally only. Options discussed:
@@ -87,7 +91,7 @@ Dashboard currently runs locally only. Options discussed:
 - The Odds API key is available (free tier, 500 credits/month)
 - `batter_home_runs` market endpoint exists
 - Odds Tracking tab in Google Sheet has formula templates
-- Not yet wired into dashboard or n8n workflow
+- Odds & Edge dashboard page is built but not yet wired into n8n notifications
 
 ---
 
@@ -99,13 +103,16 @@ Dashboard currently runs locally only. Options discussed:
 | `/api/v1/people/{id}?hydrate=stats(group=[hitting],type=[gameLog],season=YYYY)` | Player game log |
 | `/api/v1/people/{id}?hydrate=stats(group=[hitting],type=[statSplits],sitCodes=[h,a,vl,vr],season=YYYY)` | Aggregate splits |
 | `/api/v1.1/game/{gamePk}/feed/live` | Play-by-play (HR details, pitcher info) |
-| `/api/v1/schedule?date=YYYY-MM-DD&sportId=1&hydrate=probablePitcher` | Daily schedule with probable pitchers |
-| `/api/v1/people/{pitcherId}` | Pitcher details (throw hand) — needed because schedule doesn't include it |
+| `/api/v1/schedule?date=YYYY-MM-DD&sportId=1&hydrate=probablePitcher,team` | Daily schedule with probable pitchers and team abbreviations |
+| `/api/v1/people?personIds=ID1,ID2,...` | Bulk pitcher lookup (throw hand, details) — needed because schedule doesn't include pitch hand |
+| `/api/v1/teams?sportId=1` | All MLB teams with abbreviations — used for team ID → abbreviation mapping |
 
-### Tracked Players (2025 HR leaders)
-**AL:** Cal Raleigh (S/60), Aaron Judge (R/53), Junior Caminero (R/45), Jo Adell (R/37), Riley Greene (L/36), Nick Kurtz (L/36), Taylor Ward (R/36), Byron Buxton (R/35), Trent Grisham (L/34), Vinnie Pasquantino (L/32)
+### Tracked Players (2025 HR leaders, 2026 teams)
+**AL:** Cal Raleigh (SEA/S/60), Aaron Judge (NYY/R/53), Junior Caminero (TB/R/45), Jo Adell (LAA/R/37), Riley Greene (DET/L/36), Nick Kurtz (ATH/L/36), Taylor Ward (BAL/R/36), Byron Buxton (MIN/R/35), Trent Grisham (NYY/L/34), Vinnie Pasquantino (KC/L/32)
 
-**NL:** Kyle Schwarber (L/56), Shohei Ohtani (L/55), Juan Soto (L/43), Pete Alonso (R/38), Eugenio Suarez (R/36), Michael Busch (L/34), Seiya Suzuki (R/32), Corbin Carroll (L/31), Pete Crow-Armstrong (L/31), Hunter Goodman (R/31)
+**NL:** Kyle Schwarber (PHI/L/56), Shohei Ohtani (LAD/L/55), Juan Soto (NYM/L/43), Pete Alonso (BAL/R/38), Eugenio Suarez (CIN/R/36), Michael Busch (CHC/L/34), Seiya Suzuki (CHC/R/32), Corbin Carroll (AZ/L/31), Pete Crow-Armstrong (CHC/L/31), Hunter Goodman (COL/R/31)
+
+**2026 trades/moves:** Eugenio Suarez → CIN, Pete Alonso → BAL (now AL), Taylor Ward → BAL
 
 ### Python Environment
 - **Use Python 3.13** — Python 3.11 is also installed but has numpy/pandas binary incompatibility
@@ -114,8 +121,11 @@ Dashboard currently runs locally only. Options discussed:
 
 ### Known Quirks
 - Splits CSV can have empty strings for numeric fields — `safe_int()` helper handles this in dashboard.py
-- Schedule API returns probable pitcher name/ID but NOT throw hand — requires separate `/people/{id}` call
+- Schedule API returns probable pitcher name/ID but NOT throw hand — requires separate bulk `/people?personIds=...` call
 - n8n Google Sheets `autoMapInputData` requires output field names to exactly match column headers
+- **n8n comma encoding:** n8n's Query Parameters section URL-encodes commas (`%2C`), breaking API params like `hydrate=probablePitcher,team` and `personIds=123,456`. Always embed comma-separated values directly in the URL string instead.
+- **n8n fetch() restricted:** `fetch()` silently fails in n8n Code nodes. All API calls must use HTTP Request nodes. Structure as: Code (prepare) → HTTP Request (fetch) → Code (process).
+- **Team abbreviations:** MLB API uses `AZ` (not `ARI`) for Arizona and `ATH` (not `OAK`) for Oakland. Game log opponent objects don't include `abbreviation` — use team ID lookup via `/api/v1/teams` or boxscore data.
 - Early season sample sizes are small — framework doc recommends 50+ games per player before drawing wagering conclusions
 
 ---
@@ -125,15 +135,16 @@ Dashboard currently runs locally only. Options discussed:
 Home Runs/
   backfill_2026.py          # One-time data pull from MLB API
   create_sheets.py          # Generate Excel workbook for Google Sheets
-  dashboard.py              # Streamlit dashboard (main app)
+  dashboard.py              # Streamlit dashboard (7-page app)
   HR_Tracker_2026.xlsx      # Generated workbook (upload to Google Drive)
   HR_PROJECT_FRAMEWORK.md   # Project plan and data structure docs
   HANDOFF.md                # This file
+  CLAUDE.md                 # n8n workflow gotchas and project notes for AI assistants
   .gitignore
   data/
     roster.csv              # 20 tracked players
-    daily_game_log.csv      # Game-by-game batting lines (284 rows)
-    hr_details.csv          # Individual HR events with pitcher info (29 rows)
+    daily_game_log.csv      # Game-by-game batting lines (320 rows)
+    hr_details.csv          # Individual HR events with pitcher info (42 rows)
     splits.csv              # Aggregate home/away + vs LHP/RHP splits
 ```
 
