@@ -16,6 +16,18 @@ GAME_FEED_URL = "https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live"
 SEASON = 2026
 OUTPUT_DIR = Path(__file__).parent / "data"
 
+# Cache of team ID -> abbreviation, populated from the API at startup
+TEAM_ABBREVS = {}
+
+
+def load_team_abbrevs():
+    """Fetch all MLB team abbreviations from the API and populate the lookup dict."""
+    url = f"{BASE_URL}/teams"
+    resp = requests.get(url, params={"sportId": 1}, timeout=15)
+    resp.raise_for_status()
+    for team in resp.json().get("teams", []):
+        TEAM_ABBREVS[team["id"]] = team.get("abbreviation", "")
+
 # Top 10 AL + Top 10 NL HR hitters from 2025
 TRACKED_PLAYERS = {
     # AL Top 10
@@ -24,8 +36,8 @@ TRACKED_PLAYERS = {
     691406: {"name": "Junior Caminero", "team": "TB", "league": "AL", "bats": "R", "hr_2025": 45},
     666176: {"name": "Jo Adell", "team": "LAA", "league": "AL", "bats": "R", "hr_2025": 37},
     682985: {"name": "Riley Greene", "team": "DET", "league": "AL", "bats": "L", "hr_2025": 36},
-    701762: {"name": "Nick Kurtz", "team": "OAK", "league": "AL", "bats": "L", "hr_2025": 36},
-    621493: {"name": "Taylor Ward", "team": "LAA", "league": "AL", "bats": "R", "hr_2025": 36},
+    701762: {"name": "Nick Kurtz", "team": "ATH", "league": "AL", "bats": "L", "hr_2025": 36},
+    621493: {"name": "Taylor Ward", "team": "BAL", "league": "AL", "bats": "R", "hr_2025": 36},
     621439: {"name": "Byron Buxton", "team": "MIN", "league": "AL", "bats": "R", "hr_2025": 35},
     663757: {"name": "Trent Grisham", "team": "NYY", "league": "AL", "bats": "L", "hr_2025": 34},
     686469: {"name": "Vinnie Pasquantino", "team": "KC", "league": "AL", "bats": "L", "hr_2025": 32},
@@ -33,11 +45,11 @@ TRACKED_PLAYERS = {
     656941: {"name": "Kyle Schwarber", "team": "PHI", "league": "NL", "bats": "L", "hr_2025": 56},
     660271: {"name": "Shohei Ohtani", "team": "LAD", "league": "NL", "bats": "L", "hr_2025": 55},
     665742: {"name": "Juan Soto", "team": "NYM", "league": "NL", "bats": "L", "hr_2025": 43},
-    624413: {"name": "Pete Alonso", "team": "NYM", "league": "NL", "bats": "R", "hr_2025": 38},
-    553993: {"name": "Eugenio Suarez", "team": "ARI", "league": "NL", "bats": "R", "hr_2025": 36},
+    624413: {"name": "Pete Alonso", "team": "BAL", "league": "AL", "bats": "R", "hr_2025": 38},
+    553993: {"name": "Eugenio Suarez", "team": "CIN", "league": "NL", "bats": "R", "hr_2025": 36},
     683737: {"name": "Michael Busch", "team": "CHC", "league": "NL", "bats": "L", "hr_2025": 34},
     673548: {"name": "Seiya Suzuki", "team": "CHC", "league": "NL", "bats": "R", "hr_2025": 32},
-    682998: {"name": "Corbin Carroll", "team": "ARI", "league": "NL", "bats": "L", "hr_2025": 31},
+    682998: {"name": "Corbin Carroll", "team": "AZ", "league": "NL", "bats": "L", "hr_2025": 31},
     691718: {"name": "Pete Crow-Armstrong", "team": "CHC", "league": "NL", "bats": "L", "hr_2025": 31},
     696100: {"name": "Hunter Goodman", "team": "COL", "league": "NL", "bats": "R", "hr_2025": 31},
 }
@@ -133,13 +145,16 @@ def process_player(player_id: int, player_info: dict) -> tuple[list[dict], list[
         is_home = game.get("isHome", False)
         game_pk = game.get("game", {}).get("gamePk", "")
 
+        team_abbr = TEAM_ABBREVS.get(team_info.get("id"), player_info["team"])
+        opp_abbr = TEAM_ABBREVS.get(opponent.get("id"), "")
+
         daily_rows.append({
             "date": game_date,
             "player_name": player_info["name"],
             "player_id": player_id,
-            "team": team_info.get("abbreviation", player_info["team"]),
+            "team": team_abbr,
             "league": player_info["league"],
-            "opponent": opponent.get("abbreviation", ""),
+            "opponent": opp_abbr,
             "home_away": "Home" if is_home else "Away",
             "ab": stat.get("atBats", 0),
             "hits": stat.get("hits", 0),
@@ -162,8 +177,8 @@ def process_player(player_id: int, player_info: dict) -> tuple[list[dict], list[
                         "player_name": player_info["name"],
                         "player_id": player_id,
                         "bats": player_info["bats"],
-                        "team": team_info.get("abbreviation", player_info["team"]),
-                        "opponent": opponent.get("abbreviation", ""),
+                        "team": team_abbr,
+                        "opponent": opp_abbr,
                         "home_away": "Home" if is_home else "Away",
                         "pitcher_name": hr["pitcher_name"],
                         "pitcher_id": hr["pitcher_id"],
@@ -249,6 +264,9 @@ def write_csv(filepath: Path, rows: list[dict], fieldnames: list[str] | None = N
 
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    print("Loading team abbreviations from MLB API...")
+    load_team_abbrevs()
+    print(f"  Loaded {len(TEAM_ABBREVS)} teams")
     print(f"=" * 60)
     print(f"MLB Home Run Backfill — {SEASON} Season")
     print(f"Tracking {len(TRACKED_PLAYERS)} players")
